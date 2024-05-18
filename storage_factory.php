@@ -5,16 +5,30 @@ require_once 'json_storage.php';
 require_once 'csv_storage.php';
 
 class StorageFactory {
-    public static function createStorage($type, $config) {
-        switch ($type) {
+    public static function create($config) {
+        $storageType = $config['Main']['storage-type'] ?? null;
+        if (!$storageType) {
+            throw new Exception("Tipo de almacenamiento no definido.");
+        }
+
+        switch ($storageType) {
             case 'mysql':
-                return new MySQLStorage($config);
+                if (!isset($config['MySQL'])) {
+                    throw new Exception("Configuración de MySQL no encontrada.");
+                }
+                return new MySQLStorage($config['MySQL']);
             case 'json':
-                return new JSONStorage($config);
+                if (!isset($config['json'])) {
+                    throw new Exception("Configuración de JSON no encontrada.");
+                }
+                return new JSONStorage($config['json']);
             case 'csv':
-                return new CSVStorage($config);
+                if (!isset($config['csv'])) {
+                    throw new Exception("Configuración de CSV no encontrada.");
+                }
+                return new CSVStorage($config['csv']);
             default:
-                throw new Exception("Tipo de almacenamiento no soportado: $type");
+                throw new Exception("Tipo de almacenamiento no soportado: $storageType");
         }
     }
 }

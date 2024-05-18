@@ -1,112 +1,86 @@
 <?php
 
-require_once 'mysql_storage.php';
-require_once 'json_storage.php';
-require_once 'csv_storage.php';
 require_once 'storage_factory.php';
 
-$configFile = $_SERVER['HOME'] . '/.config/task_manager.cfg';
-$storage = null;
-
-if (file_exists($configFile)) {
-    $config = parse_ini_file($configFile, true);
-    $storageType = $config['Main']['storage-type'];
-
-    try {
-        $storage = StorageFactory::createStorage($storageType, $config);
-    } catch (Exception $e) {
-        die($e->getMessage());
-    }
-} else {
+$configFilePath = '/home/ale/.config/task_manager.cfg';
+if (!file_exists($configFilePath)) {
     echo "Configuración no encontrada. Creando archivo de configuración...\n";
-    echo "Elige un tipo de almacenamiento (mysql, json, csv): ";
-    $storageType = readline();
+    $storageType = readline("Elija un tipo de almacenamiento (mysql, json, csv): ");
+    $config = ['Main' => ['storage-type' => $storageType]];
 
-    if ($storageType === 'mysql') {
-        echo "Host: ";
-        $host = readline();
-        echo "Base de datos: ";
-        $db = readline();
-        echo "Usuario: ";
-        $user = readline();
-        echo "Contraseña: ";
-        $password = readline();
-        echo "Puerto (default 3306): ";
-        $port = readline() ?: 3306;
-
-        $configData = "[Main]\nstorage-type = $storageType\n\n";
-        $configData .= "[MySQL]\nhost = $host\ndb = $db\nuser = $user\npassword = $password\nport = $port\n";
-        file_put_contents($configFile, $configData);
-    } else {
-        echo "Introduce la ruta del archivo: ";
-        $filePath = readline();
-
-        $configData = "[Main]\nstorage-type = $storageType\n\n";
-        $configData .= "[$storageType]\nfile = $filePath\n";
-        file_put_contents($configFile, $configData);
-    }
-
-    try {
-        $storage = StorageFactory::createStorage($storageType, $config);
-    } catch (Exception $e) {
-        die($e->getMessage());
-    }
-}
-
-function processOption($option, $storage) {
-    switch ($option) {
-        case '1':
-            $tasks = $storage->getTasks();
-            if (!empty($tasks)) {
-                echo "======= Tareas =======\n";
-                foreach ($tasks as $task) {
-                    echo "ID: {$task['id']}\nNombre: {$task['name']}\nDescripción: {$task['description']}\nEstado: {$task['state']}\n";
-                    echo "======================\n";
-                }
-            } else {
-                echo "No se encontraron tareas.\n";
-            }
+    switch ($storageType) {
+        case 'mysql':
+            $config['MySQL'] = [
+                'host' => readline("Ingrese el host: "),
+                'db' => readline("Ingrese el nombre de la base de datos: "),
+                'user' => readline("Ingrese el usuario: "),
+                'password' => readline("Ingrese la contraseña: "),
+                'port' => readline("Ingrese el puerto: "),
+            ];
             break;
-        case '2':
-            echo "Introduce el nombre de la tarea: ";
-            $name = readline();
-            echo "Introduce la descripción de la tarea: ";
-            $description = readline();
-            $task = ['name' => $name, 'description' => $description, 'state' => 'pendiente'];
-            $storage->addTask($task);
-            echo "Tarea añadida con éxito.\n";
+        case 'json':
+            $config['json'] = ['file' => readline("Ingrese la ruta del archivo JSON: ")];
             break;
-        case '3':
-            echo "Introduce el ID de la tarea para completar: ";
-            $id = readline();
-            $storage->completeTask($id);
-            echo "Tarea completada con éxito.\n";
+        case 'csv':
+            $config['csv'] = ['file' => readline("Ingrese la ruta del archivo CSV: ")];
             break;
-        case '4':
-            echo "Introduce el ID de la tarea para eliminar: ";
-            $id = readline();
-            $storage->removeTask($id);
-            echo "Tarea eliminada con éxito.\n";
-            break;
-        case '5':
-            echo "¡Adiós!\n";
-            exit;
         default:
-            echo "Opción no válida. Por favor, selecciona una opción válida.\n";
+            die("Tipo de almacenamiento no soportado.\n");
     }
+
+    file_put_contents($configFilePath, json_encode($config, JSON_PRETTY_PRINT));
+} else {
+    $config = json_decode(file_get_contents($configFilePath), true);
 }
 
-while (true) {
-    echo "=========== Gestor de Tareas ===========\n";
-    echo "1. Mostrar Tareas\n";
-    echo "2. Añadir Tarea\n";
-    echo "3. Completar Tarea\n";
-    echo "4. Eliminar Tarea\n";
+try {
+    $storage = StorageFactory::create($config);
+} catch (Exception $e) {
+    die("Error al crear el almacenamiento: " . $e->getMessage() . "\n");
+}
+
+function mostrarMenu() {
+    echo "=========== Gestor de tareas ===========\n";
+    echo "1. Listar tareas\n";
+    echo "2. Añadir tarea\n";
+    echo "3. Completar tarea\n";
+    echo "4. Eliminar tarea\n";
     echo "5. Salir\n";
     echo "========================================\n";
-    echo "Selecciona una opción: ";
-    $option = readline();
-    processOption($option, $storage);
 }
+
+do {
+    mostrarMenu();
+    $option = readline("Elija una opción: ");
+    switch ($option) {
+        case 1:
+            $tasks = $storage->getTasks();
+            foreach ($tasks as $task) {
+                echo "{$task['id']}. {$task['name']} - {$task['description']} [{$task['state']}]\n";
+            }
+            break;
+        case 2:
+            $name = readline("Ingrese el nombre de la tarea: ");
+            $description = readline("Ingrese la descripción de la tarea: ");
+            $task = ['name' => $name, 'description' => $description, 'state' => 'pendiente'];
+            $storage->addTask($task);
+            echo "Tarea añadida.\n";
+            break;
+        case 3:
+            $id = readline("Ingrese el ID de la tarea a completar: ");
+            $storage->completeTask($id);
+            echo "Tarea completada.\n";
+            break;
+        case 4:
+            $id = readline("Ingrese el ID de la tarea a eliminar: ");
+            $storage->removeTask($id);
+            echo "Tarea eliminada.\n";
+            break;
+        case 5:
+            exit("Saliendo del gestor de tareas...\n");
+        default:
+            echo "Opción no válida.\n";
+    }
+} while (true);
 
 ?>
